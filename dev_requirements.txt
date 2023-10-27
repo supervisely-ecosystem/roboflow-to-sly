@@ -1,0 +1,2 @@
+supervisely==6.72.163
+roboflow==1.1.7
