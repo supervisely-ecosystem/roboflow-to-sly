@@ -18,6 +18,7 @@ from supervisely.app.widgets import (
 import xml.etree.ElementTree as ET
 import src.globals as g
 from src.roboflow_api import download_project
+from src.converters import coco_to_supervisely
 
 
 COLUMNS = [
@@ -246,6 +247,19 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
 
     prepare_coco(extract_path)
 
+    converted_path = os.path.join(g.CONVERTED_DIR, project.name)
+
+    coco_to_supervisely(extract_path, converted_path)
+
+    sly.logger.debug(f"Converted {extract_path} to {converted_path}")
+
+    sly.Project.upload(
+        converted_path,
+        g.api,
+        g.STATE.selected_workspace,
+        project.name,
+    )
+
     return True
 
 
@@ -296,210 +310,210 @@ def prepare_coco(directory: str):
     sly.logger.info(f"Prepared correct COCO structure in {directory}")
 
 
-def convert_and_upload_old(
-    project_id: id, project_name: str, task_archive_paths: List[Tuple[str, str]]
-) -> bool:
-    """Unpacks the task archive, parses it's content, converts it to Supervisely format
-    and uploads it to Supervisely.
+# def convert_and_upload_old(
+#     project_id: id, project_name: str, task_archive_paths: List[Tuple[str, str]]
+# ) -> bool:
+#     """Unpacks the task archive, parses it's content, converts it to Supervisely format
+#     and uploads it to Supervisely.
 
-    1. Checks if the task archive contains images or video.
-    2. Creates projects with corresponding data types in Supervisely (images or videos).
-    3. For each task:
-        3.1. Unpacks the task archive in a separate directory in project directory.
-        3.2. Parses annotations.xml and reads list of images.
-        3.3. Converts Roboflow annotations to Supervisely format.
-        3.4. Depending on data type (images or video) creates specific annotations.
-        3.5. Uploads images or video to Supervisely.
-        3.6. Uploads annotations to Supervisely.
-    4. Updates the project in the projects table with new URLs.
-    5. Returns True if the upload was successful, False otherwise.
+#     1. Checks if the task archive contains images or video.
+#     2. Creates projects with corresponding data types in Supervisely (images or videos).
+#     3. For each task:
+#         3.1. Unpacks the task archive in a separate directory in project directory.
+#         3.2. Parses annotations.xml and reads list of images.
+#         3.3. Converts Roboflow annotations to Supervisely format.
+#         3.4. Depending on data type (images or video) creates specific annotations.
+#         3.5. Uploads images or video to Supervisely.
+#         3.6. Uploads annotations to Supervisely.
+#     4. Updates the project in the projects table with new URLs.
+#     5. Returns True if the upload was successful, False otherwise.
 
-    :param project_id: ID of the project in Roboflow
-    :type project_id: id
-    :param project_name: name of the project in Roboflow
-    :type project_name: str
-    :param task_archive_paths: list of tuples for each task, which containing path to the task archive and data type
-        possible data types: 'imageset', 'video'
-    :type task_archive_paths: List[Tuple[str, str]]
-    :return: status of the upload (True if the upload was successful, False otherwise)
-    :rtype: bool
-    """
-    unpacked_project_path = os.path.join(g.UNPACKED_DIR, f"{project_id}_{project_name}")
-    sly.logger.debug(f"Unpacked project path: {unpacked_project_path}")
+#     :param project_id: ID of the project in Roboflow
+#     :type project_id: id
+#     :param project_name: name of the project in Roboflow
+#     :type project_name: str
+#     :param task_archive_paths: list of tuples for each task, which containing path to the task archive and data type
+#         possible data types: 'imageset', 'video'
+#     :type task_archive_paths: List[Tuple[str, str]]
+#     :return: status of the upload (True if the upload was successful, False otherwise)
+#     :rtype: bool
+#     """
+#     unpacked_project_path = os.path.join(g.UNPACKED_DIR, f"{project_id}_{project_name}")
+#     sly.logger.debug(f"Unpacked project path: {unpacked_project_path}")
 
-    images_project = None
-    videos_project = None
+#     images_project = None
+#     videos_project = None
 
-    if any(task_data_type == "imageset" for _, task_data_type in task_archive_paths):
-        images_project = g.api.project.create(
-            g.STATE.selected_workspace,
-            f"From CVAT {project_name} (images)",
-            change_name_if_conflict=True,
-        )
-        sly.logger.debug(f"Created project {images_project.name} in Supervisely.")
+#     if any(task_data_type == "imageset" for _, task_data_type in task_archive_paths):
+#         images_project = g.api.project.create(
+#             g.STATE.selected_workspace,
+#             f"From CVAT {project_name} (images)",
+#             change_name_if_conflict=True,
+#         )
+#         sly.logger.debug(f"Created project {images_project.name} in Supervisely.")
 
-        images_project_meta = sly.ProjectMeta.from_json(
-            g.api.project.get_meta(images_project.id)
-        )
+#         images_project_meta = sly.ProjectMeta.from_json(
+#             g.api.project.get_meta(images_project.id)
+#         )
 
-        sly.logger.debug(f"Retrieved images project meta for {images_project.name}.")
+#         sly.logger.debug(f"Retrieved images project meta for {images_project.name}.")
 
-    if any(task_data_type == "video" for _, task_data_type in task_archive_paths):
-        videos_project = g.api.project.create(
-            g.STATE.selected_workspace,
-            f"From CVAT {project_name} (videos)",
-            type=sly.ProjectType.VIDEOS,
-            change_name_if_conflict=True,
-        )
-        sly.logger.debug(f"Created project {videos_project.name} in Supervisely.")
+#     if any(task_data_type == "video" for _, task_data_type in task_archive_paths):
+#         videos_project = g.api.project.create(
+#             g.STATE.selected_workspace,
+#             f"From CVAT {project_name} (videos)",
+#             type=sly.ProjectType.VIDEOS,
+#             change_name_if_conflict=True,
+#         )
+#         sly.logger.debug(f"Created project {videos_project.name} in Supervisely.")
 
-        videos_project_meta = sly.ProjectMeta.from_json(
-            g.api.project.get_meta(videos_project.id)
-        )
+#         videos_project_meta = sly.ProjectMeta.from_json(
+#             g.api.project.get_meta(videos_project.id)
+#         )
 
-        sly.logger.debug(f"Retrieved videos project meta for {videos_project.name}.")
+#         sly.logger.debug(f"Retrieved videos project meta for {videos_project.name}.")
 
-    succesfully_uploaded = True
+#     succesfully_uploaded = True
 
-    for task_archive_path, task_data_type in task_archive_paths:
-        sly.logger.debug(
-            f"Processing task archive {task_archive_path} with data type {task_data_type}."
-        )
-        # * Unpacking archive, parsing annotations.xml and reading list of images.
-        images_et, images_paths, source = unpack_and_read_task(
-            task_archive_path, unpacked_project_path
-        )
+#     for task_archive_path, task_data_type in task_archive_paths:
+#         sly.logger.debug(
+#             f"Processing task archive {task_archive_path} with data type {task_data_type}."
+#         )
+#         # * Unpacking archive, parsing annotations.xml and reading list of images.
+#         images_et, images_paths, source = unpack_and_read_task(
+#             task_archive_path, unpacked_project_path
+#         )
 
-        sly.logger.debug(f"Parsed annotations and found {len(images_et)} images.")
+#         sly.logger.debug(f"Parsed annotations and found {len(images_et)} images.")
 
-        # * Using archive name as dataset name.
-        dataset_name = sly.fs.get_file_name(task_archive_path)
-        sly.logger.debug(f"Will use {dataset_name} as dataset name.")
+#         # * Using archive name as dataset name.
+#         dataset_name = sly.fs.get_file_name(task_archive_path)
+#         sly.logger.debug(f"Will use {dataset_name} as dataset name.")
 
-        if task_data_type == "imageset":
-            # Working with Supervisely Images Project.
-            sly.logger.debug(
-                "Data type is imageset, will convert annotations to Supervisely format."
-            )
+#         if task_data_type == "imageset":
+#             # Working with Supervisely Images Project.
+#             sly.logger.debug(
+#                 "Data type is imageset, will convert annotations to Supervisely format."
+#             )
 
-            task_tags, image_objects = convert_images_annotations(
-                images_et, images_paths
-            )
+#             task_tags, image_objects = convert_images_annotations(
+#                 images_et, images_paths
+#             )
 
-            # * Prepare lists of paths, names and build annotations from labels.
-            images_names, images_paths, images_anns = prepare_images_for_upload(
-                g.api, image_objects, images_project, images_project_meta
-            )
+#             # * Prepare lists of paths, names and build annotations from labels.
+#             images_names, images_paths, images_anns = prepare_images_for_upload(
+#                 g.api, image_objects, images_project, images_project_meta
+#             )
 
-            sly.logger.debug(f"Task data type is {task_data_type}, will upload images.")
+#             sly.logger.debug(f"Task data type is {task_data_type}, will upload images.")
 
-            upload_images_task(
-                g.api,
-                dataset_name,
-                images_project,
-                images_names,
-                images_paths,
-                images_anns,
-                task_tags,
-            )
+#             upload_images_task(
+#                 g.api,
+#                 dataset_name,
+#                 images_project,
+#                 images_names,
+#                 images_paths,
+#                 images_anns,
+#                 task_tags,
+#             )
 
-            sly.logger.info(
-                f"Finished processing task archive {task_archive_path} with data type {task_data_type}."
-            )
-        elif task_data_type == "video":
-            # Working with Supervisely Videos Project.
-            sly.logger.debug(
-                "Task data type is video, will convert annotations to Supervisely format."
-            )
+#             sly.logger.info(
+#                 f"Finished processing task archive {task_archive_path} with data type {task_data_type}."
+#             )
+#         elif task_data_type == "video":
+#             # Working with Supervisely Videos Project.
+#             sly.logger.debug(
+#                 "Task data type is video, will convert annotations to Supervisely format."
+#             )
 
-            (
-                video_size,
-                video_frames,
-                video_objects,
-                video_tags,
-            ) = convert_video_annotations(images_et, images_paths)
+#             (
+#                 video_size,
+#                 video_frames,
+#                 video_objects,
+#                 video_tags,
+#             ) = convert_video_annotations(images_et, images_paths)
 
-            sly.logger.debug(f"Found {len(video_frames)} frames in the video.")
+#             sly.logger.debug(f"Found {len(video_frames)} frames in the video.")
 
-            update_project_meta(
-                g.api,
-                videos_project_meta,
-                videos_project.id,
-                labels=video_objects,
-                tags=video_tags,
-            )
+#             update_project_meta(
+#                 g.api,
+#                 videos_project_meta,
+#                 videos_project.id,
+#                 labels=video_objects,
+#                 tags=video_tags,
+#             )
 
-            # Prepare the name for output video using source name from CVAT annotation.
-            # Prepare the path for output video using project directory and source name.
-            # Save the video to the path.
-            source_name = f"{sly.fs.get_file_name(source)}.mp4"
-            video_path = os.path.join(unpacked_project_path, source_name)
-            sly.logger.debug(f"Will save video to {video_path}.")
-            images_to_mp4(video_path, images_paths, video_size)
+#             # Prepare the name for output video using source name from CVAT annotation.
+#             # Prepare the path for output video using project directory and source name.
+#             # Save the video to the path.
+#             source_name = f"{sly.fs.get_file_name(source)}.mp4"
+#             video_path = os.path.join(unpacked_project_path, source_name)
+#             sly.logger.debug(f"Will save video to {video_path}.")
+#             images_to_mp4(video_path, images_paths, video_size)
 
-            # Create Supervisely VideoAnnotation object using data from CVAT annotation.
-            frames = sly.FrameCollection(video_frames)
-            objects = sly.VideoObjectCollection(video_objects)
-            tag_collection = sly.VideoTagCollection(video_tags)
+#             # Create Supervisely VideoAnnotation object using data from CVAT annotation.
+#             frames = sly.FrameCollection(video_frames)
+#             objects = sly.VideoObjectCollection(video_objects)
+#             tag_collection = sly.VideoTagCollection(video_tags)
 
-            sly.logger.debug(
-                f"Will create VideoAnnotation object with: {video_size} size, "
-                f"{len(frames)} frames, {len(objects)} objects, {len(tag_collection)} tags."
-            )
+#             sly.logger.debug(
+#                 f"Will create VideoAnnotation object with: {video_size} size, "
+#                 f"{len(frames)} frames, {len(objects)} objects, {len(tag_collection)} tags."
+#             )
 
-            ann = sly.VideoAnnotation(
-                video_size, len(frames), objects, frames, tag_collection
-            )
+#             ann = sly.VideoAnnotation(
+#                 video_size, len(frames), objects, frames, tag_collection
+#             )
 
-            sly.logger.debug("VideoAnnotation successfully created.")
+#             sly.logger.debug("VideoAnnotation successfully created.")
 
-            dataset_info = g.api.dataset.create(
-                videos_project.id, dataset_name, change_name_if_conflict=True
-            )
+#             dataset_info = g.api.dataset.create(
+#                 videos_project.id, dataset_name, change_name_if_conflict=True
+#             )
 
-            sly.logger.debug(
-                f"Created dataset {dataset_info.name} in project {videos_project.name}."
-                "Uploading video..."
-            )
+#             sly.logger.debug(
+#                 f"Created dataset {dataset_info.name} in project {videos_project.name}."
+#                 "Uploading video..."
+#             )
 
-            uploaded_video: sly.api.video_api.VideoInfo = g.api.video.upload_path(
-                dataset_info.id, source_name, video_path
-            )
+#             uploaded_video: sly.api.video_api.VideoInfo = g.api.video.upload_path(
+#                 dataset_info.id, source_name, video_path
+#             )
 
-            sly.logger.debug(
-                f"Uploaded video {source_name} to dataset {dataset_info.name}."
-            )
+#             sly.logger.debug(
+#                 f"Uploaded video {source_name} to dataset {dataset_info.name}."
+#             )
 
-            g.api.video.annotation.append(uploaded_video.id, ann)
+#             g.api.video.annotation.append(uploaded_video.id, ann)
 
-            sly.logger.debug(f"Added annotation to video with ID {uploaded_video.id}.")
+#             sly.logger.debug(f"Added annotation to video with ID {uploaded_video.id}.")
 
-            sly.logger.info(
-                f"Finished processing task archive {task_archive_path} with data type {task_data_type}."
-            )
+#             sly.logger.info(
+#                 f"Finished processing task archive {task_archive_path} with data type {task_data_type}."
+#             )
 
-    sly.logger.info(
-        f"Finished copying project {project_name} from CVAT to Supervisely."
-    )
+#     sly.logger.info(
+#         f"Finished copying project {project_name} from CVAT to Supervisely."
+#     )
 
-    if images_project:
-        try:
-            new_url = sly.utils.abs_url(images_project.url)
-        except Exception:
-            new_url = images_project.url
-        sly.logger.debug(f"New URL for images project: {new_url}")
-        update_cells(project_id, new_url=new_url)
-    if videos_project:
-        try:
-            new_url = sly.utils.abs_url(videos_project.url)
-        except Exception:
-            new_url = videos_project.url
-        sly.logger.debug(f"New URL for videos project: {new_url}")
-        update_cells(project_id, new_url=new_url)
+#     if images_project:
+#         try:
+#             new_url = sly.utils.abs_url(images_project.url)
+#         except Exception:
+#             new_url = images_project.url
+#         sly.logger.debug(f"New URL for images project: {new_url}")
+#         update_cells(project_id, new_url=new_url)
+#     if videos_project:
+#         try:
+#             new_url = sly.utils.abs_url(videos_project.url)
+#         except Exception:
+#             new_url = videos_project.url
+#         sly.logger.debug(f"New URL for videos project: {new_url}")
+#         update_cells(project_id, new_url=new_url)
 
-    sly.logger.debug(f"Updated project {project_name} in the projects table.")
+#     sly.logger.debug(f"Updated project {project_name} in the projects table.")
 
-    return succesfully_uploaded
+#     return succesfully_uploaded
 
 
 def unpack_and_read_task(

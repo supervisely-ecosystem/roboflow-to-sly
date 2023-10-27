@@ -34,9 +34,16 @@ ARCHIVE_DIR = os.path.join(TEMP_DIR, "archives")
 
 # * Directory, where unpacked Roboflow data will be stored.
 UNPACKED_DIR = os.path.join(TEMP_DIR, "unpacked")
+
+# * Directory, where converted Supervisely data will be stored.
+CONVERTED_DIR = os.path.join(TEMP_DIR, "converted")
+
 sly.fs.mkdir(ARCHIVE_DIR, remove_content_if_exists=True)
 sly.fs.mkdir(UNPACKED_DIR, remove_content_if_exists=True)
-sly.logger.debug(f"Archive dir: {ARCHIVE_DIR}, unpacked dir: {UNPACKED_DIR}")
+sly.fs.mkdir(CONVERTED_DIR, remove_content_if_exists=True)
+sly.logger.debug(
+    f"Archive dir: {ARCHIVE_DIR}, unpacked dir: {UNPACKED_DIR}, converted dir: {CONVERTED_DIR}"
+)
 
 DEFAULT_API_ADDRESS = "https://api.roboflow.com"
 DEFAULT_APP_ADDRESS = "https://app.roboflow.com"

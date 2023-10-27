@@ -1,0 +1,19 @@
+{
+    "classes": [
+        {
+            "title": "cars",
+            "shape": "any",
+            "color": "#3B8A0F",
+            "geometry_config": {},
+            "hotkey": ""
+        },
+        {
+            "title": "wheel",
+            "shape": "any",
+            "color": "#600F8A",
+            "geometry_config": {},
+            "hotkey": ""
+        }
+    ],
+    "tags": []
+}
