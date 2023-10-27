@@ -3,14 +3,14 @@
         {
             "title": "cars",
             "shape": "any",
-            "color": "#440F8A",
+            "color": "#0F2C8A",
             "geometry_config": {},
             "hotkey": ""
         },
         {
             "title": "wheel",
             "shape": "any",
-            "color": "#578A0F",
+            "color": "#8A680F",
             "geometry_config": {},
             "hotkey": ""
         }

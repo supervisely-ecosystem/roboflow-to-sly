@@ -3,13 +3,23 @@ import shutil
 import cv2
 import supervisely as sly
 from pycocotools.coco import COCO
+from typing import List, Dict, Tuple
 import pycocotools.mask as mask_util
 import numpy as np
 from copy import deepcopy
 
 
-def coco_to_supervisely(src_path: str, dst_path: str):
-    META = sly.ProjectMeta()
+def coco_to_supervisely(src_path: str, dst_path: str) -> str:
+    """Convert COCO project from src_path to Supervisely project in dst_path.
+
+    :param src_path: path to COCO project.
+    :type src_path: str
+    :param dst_path: path to Supervisely project.
+    :type dst_path: str
+    :return: path to Supervisely project.
+    :rtype: str
+    """
+    project_meta = sly.ProjectMeta()
 
     dataset_names = sly.fs.get_subdirs(src_path)
     dataset_paths = [os.path.join(src_path, name) for name in dataset_names]
@@ -30,12 +40,14 @@ def coco_to_supervisely(src_path: str, dst_path: str):
             coco_images = coco_instances.imgs
             coco_anns = coco_instances.imgToAnns
 
-            sly_dataset_dir = create_sly_dataset_dir(
-                dst_path, dataset_name=dataset_name
-            )
-            img_dir = os.path.join(sly_dataset_dir, "img")
-            ann_dir = os.path.join(sly_dataset_dir, "ann")
-            META = get_sly_meta_from_coco(META, dst_path, categories, dataset_name)
+            # * Creating directories for Supervisely project.
+            dst_dataset_path = os.path.join(dst_path, dataset_name)
+            img_dir = os.path.join(dst_dataset_path, "img")
+            ann_dir = os.path.join(dst_dataset_path, "ann")
+            sly.fs.mkdir(img_dir)
+            sly.fs.mkdir(ann_dir)
+
+            project_meta = update_meta(project_meta, dst_path, categories, dataset_name)
 
             for img_id, img_info in coco_images.items():
                 image_name = img_info["file_name"]
@@ -44,8 +56,8 @@ def coco_to_supervisely(src_path: str, dst_path: str):
                 if sly.fs.file_exists(os.path.join(dataset_path, "images", image_name)):
                     img_ann = coco_anns[img_id]
                     img_size = (img_info["height"], img_info["width"])
-                    ann = create_sly_ann_from_coco_annotation(
-                        meta=META,
+                    ann = coco_to_sly_ann(
+                        meta=project_meta,
                         coco_categories=categories,
                         coco_ann=img_ann,
                         image_size=img_size,
@@ -62,45 +74,57 @@ def coco_to_supervisely(src_path: str, dst_path: str):
     return dst_path
 
 
-def create_sly_dataset_dir(dst_path, dataset_name):
-    dataset_dir = os.path.join(dst_path, dataset_name)
-    sly.fs.mkdir(dataset_dir)
-    img_dir = os.path.join(dataset_dir, "img")
-    sly.fs.mkdir(img_dir)
-    ann_dir = os.path.join(dataset_dir, "ann")
-    sly.fs.mkdir(ann_dir)
-    return dataset_dir
+def update_meta(
+    meta: sly.ProjectMeta, dst_path: str, coco_categories: List[dict], dataset_name: str
+) -> sly.ProjectMeta:
+    """Create Supervisely ProjectMeta from COCO categories.
 
-
-def get_sly_meta_from_coco(meta, dst_path, coco_categories, dataset_name):
+    :param meta: ProjectMeta of Supervisely project.
+    :type meta: sly.ProjectMeta
+    :param dst_path: path to Supervisely project.
+    :type dst_path: str
+    :param coco_categories: List of COCO categories.
+    :type coco_categories: List[dict]
+    :param dataset_name: name of dataset.
+    :type dataset_name: str
+    :return: Updated ProjectMeta.
+    :rtype: sly.ProjectMeta
+    """
     path_to_meta = os.path.join(dst_path, "meta.json")
     if not os.path.exists(path_to_meta):
-        meta = dump_meta(meta, coco_categories, path_to_meta)
-    elif dataset_name not in ["train2014", "val2014", "train2017", "val2017"]:
-        meta = dump_meta(meta, coco_categories, path_to_meta)
+        colors = []
+        for category in coco_categories:
+            if category["name"] in [obj_class.name for obj_class in meta.obj_classes]:
+                continue
+            new_color = sly.color.generate_rgb(colors)
+            colors.append(new_color)
+            obj_class = sly.ObjClass(category["name"], sly.AnyGeometry, new_color)
+            meta = meta.add_obj_class(obj_class)
+        meta_json = meta.to_json()
+        sly.json.dump_json_file(meta_json, path_to_meta)
     return meta
 
 
-def dump_meta(meta, coco_categories, path_to_meta):
-    meta = create_sly_meta_from_coco_categories(meta, coco_categories)
-    meta_json = meta.to_json()
-    sly.json.dump_json_file(meta_json, path_to_meta)
-    return meta
+def coco_to_sly_ann(
+    meta: sly.ProjectMeta,
+    coco_categories: List[dict],
+    coco_ann: List[Dict],
+    image_size: Tuple[int, int],
+) -> sly.Annotation:
+    """Convert COCO annotation to Supervisely annotation.
 
+    :param meta: ProjectMeta of Supervisely project.
+    :type meta: sly.ProjectMeta
+    :param coco_categories: List of COCO categories.
+    :type coco_categories: List[dict]
+    :param coco_ann: List of COCO annotations.
+    :type coco_ann: List[Dict]
+    :param image_size: size of image.
+    :type image_size: Tuple[int, int]
+    :return: Supervisely annotation.
+    :rtype: sly.Annotation
+    """
 
-def create_sly_meta_from_coco_categories(meta, coco_categories):
-    colors = []
-    for category in coco_categories:
-        if category["name"] in [obj_class.name for obj_class in meta.obj_classes]:
-            continue
-        new_color = sly.color.generate_rgb(colors)
-        colors.append(new_color)
-        obj_class = sly.ObjClass(category["name"], sly.AnyGeometry, new_color)
-        meta = meta.add_obj_class(obj_class)
-    return meta
-
-
-def create_sly_ann_from_coco_annotation(meta, coco_categories, coco_ann, image_size):
     labels = []
     imag_tags = []
     name_cat_id_map = coco_category_to_class_name(coco_categories)
@@ -142,7 +166,14 @@ def create_sly_ann_from_coco_annotation(meta, coco_categories, coco_ann, image_s
     return sly.Annotation(image_size, labels=labels, img_tags=imag_tags)
 
 
-def convert_rle_mask_to_polygon(coco_ann):
+def convert_rle_mask_to_polygon(coco_ann: List[Dict]) -> List[sly.Polygon]:
+    """Convert RLE mask to List of Supervisely Polygons.
+
+    :param coco_ann: List of COCO annotations.
+    :type coco_ann: List[Dict]
+    :return: List of Supervisely Polygons.
+    :rtype: List[sly.Polygon]
+    """
     if type(coco_ann["segmentation"]["counts"]) is str:
         coco_ann["segmentation"]["counts"] = bytes(
             coco_ann["segmentation"]["counts"], encoding="utf-8"
@@ -159,7 +190,18 @@ def convert_rle_mask_to_polygon(coco_ann):
     return sly.Bitmap(mask).to_contours()
 
 
-def convert_polygon_vertices(coco_ann, image_size):
+def convert_polygon_vertices(
+    coco_ann: List[Dict], image_size: Tuple[int, int]
+) -> List[sly.Polygon]:
+    """Convert polygon vertices to Supervisely Polygons.
+
+    :param coco_ann: List of COCO annotations.
+    :type coco_ann: List[Dict]
+    :param image_size: size of image.
+    :type image_size: Tuple[int, int]
+    :return: List of Supervisely Polygons.
+    :rtype: List[sly.Polygon]
+    """
     polygons = coco_ann["segmentation"]
     if all(type(coord) is float for coord in polygons):
         polygons = [polygons]
@@ -188,12 +230,11 @@ def convert_polygon_vertices(coco_ann, image_size):
                 cv2.pointPolygonTest(contours[0], (x, y), False) > 0
                 for x, y in exterior2
             ]
-            # if results of True, then all points are inside or on contour
+
             if all(results):
                 interiors[idx].append(deepcopy(exteriors[idy]))
                 id2del.append(idy)
 
-    # remove contours from exteriors that are inside other contours
     for j in sorted(id2del, reverse=True):
         del exteriors[j]
 
@@ -206,7 +247,22 @@ def convert_polygon_vertices(coco_ann, image_size):
     return figures
 
 
-def move_trainvalds_to_sly_dataset(dataset_dir, coco_image, ann, img_dir, ann_dir):
+def move_trainvalds_to_sly_dataset(
+    dataset_dir: str, coco_image: Dict, ann: sly.Annotation, img_dir: str, ann_dir: str
+) -> None:
+    """Move images and annotations to Supervisely dataset.
+
+    :param dataset_dir: path to COCO dataset.
+    :type dataset_dir: str
+    :param coco_image: COCO image.
+    :type coco_image: Dict
+    :param ann: Supervisely annotation.
+    :type ann: sly.Annotation
+    :param img_dir: path to Supervisely images.
+    :type img_dir: str
+    :param ann_dir: path to Supervisely annotations.
+    :type ann_dir: str
+    """
     image_name = coco_image["file_name"]
     if "/" in image_name:
         image_name = os.path.basename(image_name)
@@ -218,5 +274,12 @@ def move_trainvalds_to_sly_dataset(dataset_dir, coco_image, ann, img_dir, ann_di
         shutil.copy(coco_img_path, sly_img_path)
 
 
-def coco_category_to_class_name(coco_categories):
+def coco_category_to_class_name(coco_categories: List[dict]) -> Dict:
+    """Create dictionary with COCO category id as key and category name as value.
+
+    :param coco_categories: List of COCO categories.
+    :type coco_categories: List[dict]
+    :return: Dictionary with COCO category id as key and category name as value.
+    :rtype: Dict
+    """
     return {category["id"]: category["name"] for category in coco_categories}
