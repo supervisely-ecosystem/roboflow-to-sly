@@ -3,9 +3,9 @@ import shutil
 import supervisely as sly
 from typing import List, Tuple, Union
 from time import sleep
-
 from datetime import datetime
 
+import roboflow
 from supervisely.app.widgets import (
     Container,
     Card,
@@ -16,18 +16,8 @@ from supervisely.app.widgets import (
     Flexbox,
 )
 import xml.etree.ElementTree as ET
-
-# from src.roboflow_api import cvat_data, retreive_dataset
-
-# from import_cvat.src.converters import (
-#     convert_images_annotations,
-#     convert_video_annotations,
-#     prepare_images_for_upload,
-#     upload_images_task,
-#     update_project_meta,
-#     images_to_mp4,
-# )
 import src.globals as g
+from src.roboflow_api import download_project
 
 
 COLUMNS = [
@@ -36,7 +26,7 @@ COLUMNS = [
     "NAME",
     "CREATED",
     "UPDATED",
-    "CVAT URL",
+    "ROBOFLOW URL",
     "SUPERVISELY URL",
 ]
 
@@ -57,7 +47,7 @@ bad_results.hide()
 
 card = Card(
     title="3️⃣ Copying",
-    description="Copy selected projects from CVAT to Supervisely.",
+    description="Copy selected projects from Roboflow to Supervisely.",
     content=Container(
         [projects_table, buttons_flexbox, copying_progress, good_results, bad_results]
     ),
@@ -68,9 +58,8 @@ card.collapse()
 
 
 def build_projects_table() -> None:
-    """Fills the table with projects from CVAT.
+    """Fills the table with projects from Roboflow API.
     Uses global g.STATE.selected_projects to get the list of projects to show.
-    g.STATE.selected_projects is a list of project IDs from CVAT.
     """
     sly.logger.debug("Building projects table...")
     projects_table.loading = True
@@ -107,30 +96,19 @@ def build_projects_table() -> None:
 
 
 def datetime_to_str(datetime_object: datetime) -> str:
+    """Converts datetime object to string for HTML table.
+
+    :param datetime_object: datetime object
+    :type datetime_object: datetime
+    :return: HTML-formatted string
+    :rtype: str
+    """
     return datetime_object.strftime("<b>%Y-%m-%d</b> %H:%M:%S")
 
 
 @copy_button.click
 def start_copying() -> None:
-    """Main function for copying projects from CVAT to Supervisely.
-    1. Starts copying progress, changes state of widgets in UI.
-    2. Iterates over selected projects from CVAT.
-    3. For each project:
-        3.1. Updates the status in the projects table to "Copying...".
-        3.2. Iterates over tasks in the project.
-        3.3. For each task:
-            3.3.1. Downloads the task data from CVAT API.
-            3.3.2. Saves the task data to the zip archive (using up to 10 retries).
-        3.4. If the archive is empty after 10 retries, updates the status in the projects table to "Error".
-        3.5. Otherwise converts the task data to Supervisely format and uploads it to Supervisely.
-        3.6. If the task was uploaded with errors, updates the status in the projects table to "Error".
-        3.7. Otherwise updates the status in the projects table to "Copied".
-    4. Updates the status in the projects table to "Copied" or "Error" for each project.
-    5. Stops copying progress, changes state of widgets in UI.
-    6. Shows the results of copying.
-    7. Removes content from download and upload directories (if not in development mode).
-    8. Stops the application (if not in development mode).
-    """
+    """Main function for copying projects from Roboflow to Supervisely."""
     sly.logger.debug(
         f"Copying button is clicked. Selected projects: {g.STATE.selected_projects}"
     )
@@ -139,35 +117,30 @@ def start_copying() -> None:
     copy_button.text = "Copying..."
     g.STATE.continue_copying = True
 
-    def save_task_to_zip(task_id: int, task_path: str, retry: int = 0) -> bool:
-        """Tries to download the task data from CVAT API and save it to the zip archive.
+    def save_project_to_zip(
+        project: roboflow.Project, archive_path: str, retry: int = 0
+    ) -> bool:
+        """Tries to download the project from Roboflow API and save it to the zip archive.
         Functions tries to download the task data 10 times if the archive is empty and
         returns False if it can't download the data after 10 retries. Otherwise returns True.
 
-        :param task_id: task ID in CVAT
-        :type task_id: int
-        :param task_path: path for saving task data in zip archive
-        :type task_path: str
+        :param project: project object from Roboflow API
+        :type task_id: roboflow.Project
+        :param archive_path: path to the zip archive on the local machine
+        :type archive_path: str
         :param retry: current number of retries, defaults to 0
         :type retry: int, optional
         :return: download status (True if the archive is not empty, False otherwise)
         :rtype: bool
         """
-        sly.logger.debug("Trying to retreive task data from API...")
-        task_data = retreive_dataset(task_id=task.id)
+        sly.logger.debug(
+            f"Trying to retreive project {project.name} archive from Roboflow API..."
+        )
+        download_status = download_project(project, archive_path)
 
-        with open(task_path, "wb") as f:
-            shutil.copyfileobj(task_data, f)
-
-        sly.logger.info(f"Saved data to path: {task_path}, will check it's size...")
-
-        # Check if the archive has non-zero size.
-        if os.path.getsize(task_path) == 0:
-            sly.logger.debug(f"The archive for task {task_id} is empty, removing it...")
-            sly.fs.silent_remove(task_path)
-            sly.logger.debug(f"The archive with path {task_path} was removed.")
+        if not download_status:
             sly.logger.info(
-                f"Will retry to download task {task_id}, because the archive is empty."
+                f"Will retry to download project {project.name}, because download was unsuccessful."
             )
             if retry < 10:
                 # Try to download the task data again.
@@ -178,95 +151,64 @@ def start_copying() -> None:
                     sleep(1)
                     timer -= 1
 
-                sly.logger.info(f"Retry {retry} to download task {task_id}...")
-                save_task_to_zip(task_id, task_path, retry)
+                sly.logger.info(f"Retry {retry} to download project {project.name}...")
+                save_project_to_zip(project, archive_path, retry)
             else:
                 # If the archive is empty after 10 retries, return False.
-                sly.logger.error(f"Can't download task {task_id} after 10 retries.")
+                sly.logger.error(
+                    f"Can't download project {project.name} after 10 retries."
+                )
                 return False
         else:
-            sly.logger.debug(f"Archive for task {task_id} was downloaded correctly.")
+            sly.logger.debug(
+                f"Archive for project {project.name} was downloaded successfully."
+            )
             return True
 
     succesfully_uploaded = 0
-    uploded_with_errors = 0
+    uploaded_with_errors = 0
 
     with copying_progress(
         total=len(g.STATE.selected_projects), message="Copying..."
     ) as pbar:
-        for project_id in g.STATE.selected_projects:
-            sly.logger.debug(f"Copying project with id: {project_id}")
-            update_cells(project_id, new_status=g.COPYING_STATUS.working)
+        for project in g.STATE.selected_projects:
+            sly.logger.debug(f"Copying project {project.name}")
+            update_cells(project.id, new_status=g.COPYING_STATUS.working)
 
-            task_ids_with_errors = []
-            task_archive_paths = []
+            archive_path = os.path.join(g.ARCHIVE_DIR, f"{project.name}.zip")
+            download_status = save_project_to_zip(project, archive_path)
 
-            for task in cvat_data(project_id=project_id):
-                data_type = task.data_type
+            if not download_status:
+                sly.logger.warning(f"Project {project.name} was not downloaded.")
+                update_cells(project.id, new_status=g.COPYING_STATUS.error)
+                uploaded_with_errors += 1
+                continue
 
-                sly.logger.debug(
-                    f"Copying task with id: {task.id}, data type: {data_type}"
-                )
-                if not g.STATE.continue_copying:
-                    sly.logger.debug("Copying is stopped by the user.")
-                    continue
+            sly.logger.info(f"Project {project.name} was downloaded successfully.")
 
-                project_name = g.STATE.project_names[project_id]
-                project_dir = os.path.join(
-                    g.ARCHIVE_DIR, f"{project_id}_{project_name}_{data_type}"
-                )
-                sly.fs.mkdir(project_dir)
-                task_filename = f"{task.id}_{task.name}_{data_type}.zip"
+            upload_status = convert_and_upload(project, archive_path)
 
-                task_path = os.path.join(project_dir, task_filename)
-                download_status = save_task_to_zip(task.id, task_path)
-                if download_status is False:
-                    task_ids_with_errors.append(task.id)
-                else:
-                    task_archive_paths.append((task_path, data_type))
-
-            if not task_archive_paths:
-                sly.logger.warning(
-                    f"No tasks was successfully downloaded for project ID {project_id}. It will be skipped."
-                )
-                new_status = g.COPYING_STATUS.error
-                uploded_with_errors += 1
+            if upload_status:
+                sly.logger.info(f"Project {project.name} was uploaded successfully.")
+                new_status = g.COPYING_STATUS.copied
+                succesfully_uploaded += 1
             else:
-                upload_status = convert_and_upload(
-                    project_id, project_name, task_archive_paths
-                )
+                sly.logger.warning(f"Project {project.name} was not uploaded.")
+                new_status = g.COPYING_STATUS.error
+                uploaded_with_errors += 1
 
-                if task_ids_with_errors:
-                    sly.logger.warning(
-                        f"Project ID {project_id} was downloaded with errors. "
-                        "Task IDs with errors: {task_ids_with_errors}."
-                    )
-                    new_status = g.COPYING_STATUS.error
-                    uploded_with_errors += 1
-                elif not upload_status:
-                    sly.logger.warning(
-                        f"Project ID {project_id} was uploaded with errors."
-                    )
-                    new_status = g.COPYING_STATUS.error
-                    uploded_with_errors += 1
-                else:
-                    sly.logger.info(
-                        f"Project ID {project_id} was downloaded successfully."
-                    )
-                    new_status = g.COPYING_STATUS.copied
-                    succesfully_uploaded += 1
+            update_cells(project.id, new_status=new_status)
+            sly.logger.debug(f"Updated project {project.name} in the projects table.")
 
-            update_cells(project_id, new_status=new_status)
-
-            sly.logger.info(f"Finished processing project ID {project_id}.")
+            sly.logger.info(f"Finished processing project {project.name}.")
 
             pbar.update(1)
 
     if succesfully_uploaded:
         good_results.text = f"Succesfully uploaded {succesfully_uploaded} projects."
         good_results.show()
-    if uploded_with_errors:
-        bad_results.text = f"Uploaded {uploded_with_errors} projects with errors."
+    if uploaded_with_errors:
+        bad_results.text = f"Uploaded {uploaded_with_errors} projects with errors."
         bad_results.show()
 
     copy_button.text = "Copy"
@@ -275,7 +217,7 @@ def start_copying() -> None:
     sly.logger.info(f"Finished copying {len(g.STATE.selected_projects)} projects.")
 
     if sly.is_development():
-        # * For debug purposes it's better to save the data from CVAT.
+        # * For debug purposes it's better to save the data from Roboflow API.
         sly.logger.debug(
             "Development mode, will not stop the application. "
             "And NOT clean download and upload directories."
@@ -295,7 +237,66 @@ def start_copying() -> None:
     app.stop()
 
 
-def convert_and_upload(
+def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
+    sly.logger.debug(f"Converting and uploading project {project.name}...")
+    extract_path = os.path.join(g.UNPACKED_DIR, project.name)
+
+    sly.fs.unpack_archive(archive_path, extract_path, remove_junk=True)
+    sly.logger.debug(f"Unpacked {archive_path} to {extract_path}")
+
+    prepare_coco(extract_path)
+
+    return True
+
+
+def prepare_coco(directory: str):
+    """Prepares correct structure of COCO format from Roboflow to Supervisely.
+
+    1. Remove all files in directory (left only subdirectories)
+    2. For each subdirectory (which will be a dataset):
+        2.1. Create annotations directory
+        2.2. Move _annotations.coco.json from subdirectory to annotations directory
+        2.3. Rename _annotations.coco.json in annotations directory to instances.json
+        2.4. Create images directory
+        2.5. Move all images from subdirectory to images directory
+
+    :param directory: path to the directory with COCO structure
+    :type directory: str
+    """
+    sly.logger.debug(f"Preparing COCO structure in {directory}")
+
+    root_files = sly.fs.list_files(directory)
+    for root_file in root_files:
+        if not os.path.isdir(root_file):
+            sly.fs.silent_remove(root_file)
+            sly.logger.debug(f"Removed file {root_file} from {directory}")
+
+    subdirectories = [
+        os.path.join(directory, name) for name in sly.fs.get_subdirs(directory)
+    ]
+    for subdirectory in subdirectories:
+        subdirectory = os.path.abspath(subdirectory)
+        sly.logger.debug(f"Processing subdirectory {subdirectory}")
+
+        annotations_dir = os.path.join(subdirectory, "annotations")
+        sly.fs.mkdir(annotations_dir)
+
+        annotations_file_src = os.path.join(subdirectory, "_annotations.coco.json")
+        annotations_file_dst = os.path.join(annotations_dir, "instances.json")
+        sly.fs.copy_file(annotations_file_src, annotations_file_dst)
+        sly.fs.silent_remove(annotations_file_src)
+
+        images_dir = os.path.join(subdirectory, "images")
+        sly.fs.mkdir(images_dir)
+
+        images = sly.fs.list_files(subdirectory)
+        for image in images:
+            shutil.move(image, images_dir)
+
+    sly.logger.info(f"Prepared correct COCO structure in {directory}")
+
+
+def convert_and_upload_old(
     project_id: id, project_name: str, task_archive_paths: List[Tuple[str, str]]
 ) -> bool:
     """Unpacks the task archive, parses it's content, converts it to Supervisely format
@@ -306,16 +307,16 @@ def convert_and_upload(
     3. For each task:
         3.1. Unpacks the task archive in a separate directory in project directory.
         3.2. Parses annotations.xml and reads list of images.
-        3.3. Converts CVAT annotations to Supervisely format.
+        3.3. Converts Roboflow annotations to Supervisely format.
         3.4. Depending on data type (images or video) creates specific annotations.
         3.5. Uploads images or video to Supervisely.
         3.6. Uploads annotations to Supervisely.
     4. Updates the project in the projects table with new URLs.
     5. Returns True if the upload was successful, False otherwise.
 
-    :param project_id: ID of the project in CVAT
+    :param project_id: ID of the project in Roboflow
     :type project_id: id
-    :param project_name: name of the project in CVAT
+    :param project_name: name of the project in Roboflow
     :type project_name: str
     :param task_archive_paths: list of tuples for each task, which containing path to the task archive and data type
         possible data types: 'imageset', 'video'
@@ -596,7 +597,7 @@ def get_cell_value(
     """Returns value of the cell in the projects table by project ID and column name.
     By default returns value of the "SUPERVISELY URL" column.
 
-    :param project_id: project ID in CVAT to find the table row
+    :param project_id: project ID in Roboflow to find the table row
     :type project_id: int
     :param column: name of the columnm where to get the value, defaults to "SUPERVISELY URL"
     :type column: str, optional
