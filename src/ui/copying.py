@@ -3,6 +3,7 @@ import shutil
 import supervisely as sly
 from time import sleep
 from datetime import datetime
+from typing import Union
 
 import roboflow
 from supervisely.app.widgets import (
@@ -23,6 +24,7 @@ COLUMNS = [
     "COPYING STATUS",
     "ID",
     "NAME",
+    "TYPE",
     "CREATED",
     "UPDATED",
     "ROBOFLOW URL",
@@ -72,6 +74,7 @@ def build_projects_table() -> None:
                 g.COPYING_STATUS.waiting,
                 project.id,
                 project.name,
+                project.type,
                 datetime_to_str(project.created),
                 datetime_to_str(project.updated),
                 f'<a href="{project_url}" target="_blank">{project_url}</a>',
@@ -141,8 +144,22 @@ def start_copying() -> None:
         """
         sly.logger.debug(
             f"Trying to retreive project {project.name} archive from Roboflow API..."
+            f"Project type: {project.type}."
         )
-        download_status = download_project(project, archive_path)
+
+        EXPORT_FORMATS = {
+            "classification": "folder",
+            "object-detection": "coco",
+        }
+
+        export_format = EXPORT_FORMATS.get(project.type)
+        if not export_format:
+            sly.logger.error(
+                f"Unknown project type {project.type}. "
+                f"Following project types are supported: {list(EXPORT_FORMATS.keys())}."
+            )
+            return False
+        download_status = download_project(project, archive_path, export_format)
 
         if not download_status:
             sly.logger.info(
@@ -256,14 +273,154 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
     :return: status of the upload (True if the upload was successful, False otherwise)
     :rtype: bool
     """
-    sly.logger.debug(f"Converting and uploading project {project.name}...")
+    sly.logger.debug(
+        f"Converting and uploading project {project.name} with type {project.type}"
+    )
     extract_path = os.path.join(g.UNPACKED_DIR, project.name)
 
     sly.fs.unpack_archive(archive_path, extract_path, remove_junk=True)
     sly.logger.debug(f"Unpacked {archive_path} to {extract_path}")
 
-    prepare_coco(extract_path)
+    PROCESSING_FUNCTIONS = {
+        "classification": process_classification_project,
+        "object-detection": process_object_detection_project,
+    }
+
+    processing_function = PROCESSING_FUNCTIONS.get(project.type)
+    if not processing_function:
+        sly.logger.error(
+            f"Unknown project type {project.type}. "
+            f"Following project types are supported: {list(PROCESSING_FUNCTIONS.keys())}."
+        )
+        return False
+
     converted_path = os.path.join(g.CONVERTED_DIR, project.name)
+    project_info = processing_function(project, extract_path, converted_path)
+
+    if project_info is False:
+        return False
+
+    try:
+        new_url = sly.utils.abs_url(project_info.url)
+    except Exception:
+        new_url = project_info.url
+    sly.logger.debug(f"New URL for images project: {new_url}")
+    update_cells(project.id, new_url=new_url)
+
+    return True
+
+
+def process_classification_project(
+    project: roboflow.Project, extract_path: str, converted_path: str
+) -> Union[bool, sly.ProjectInfo]:
+    """Converts Roboflow project in classification format to Supervisely format and uploads it to Supervisely.
+
+    :param project: project object from Roboflow API
+    :type project: roboflow.Project
+    :param extract_path: path to the directory with Roboflow project after unpacking
+    :type extract_path: str
+    :param converted_path: path to the directory where converted project will be saved
+    :type converted_path: str
+    :return: ProjectInfo object from Supervisely API if the upload was successful, False otherwise
+    :rtype: Union[bool, sly.ProjectInfo]
+    """
+    sly.logger.debug(f"Processing classification project {project.name}")
+
+    datasets = [
+        os.path.join(extract_path, name) for name in sly.fs.get_subdirs(extract_path)
+    ]
+
+    sly.logger.debug(f"Found {len(datasets)} datasets in {extract_path}")
+
+    tags = []
+    images = {}
+
+    for dataset in datasets:
+        dataset_name = os.path.basename(dataset)
+        subdirectories = [os.path.join(dataset, name) for name in os.listdir(dataset)]
+        dataset_images = {}
+        for subdirectory in subdirectories:
+            tag_name = os.path.basename(subdirectory)
+            if tag_name not in tags:
+                tags.append(tag_name)
+            files = [
+                os.path.join(subdirectory, name)
+                for name in sly.fs.list_files(
+                    subdirectory,
+                    valid_extensions=sly.image.SUPPORTED_IMG_EXTS,
+                    ignore_valid_extensions_case=True,
+                )
+            ]
+
+            dataset_images[tag_name] = files
+
+        images[dataset_name] = dataset_images
+
+    sly.logger.info(
+        f"Following tags were found: {tags}, prepared {len(images)} datasets with images."
+    )
+
+    tag_metas = [
+        sly.TagMeta(name=tag_name, value_type=sly.TagValueType.NONE)
+        for tag_name in tags
+    ]
+
+    project_meta = sly.ProjectMeta(tag_metas=tag_metas)
+    project_info = g.api.project.create(
+        g.STATE.selected_workspace, project.name, change_name_if_conflict=True
+    )
+    sly.logger.info(f"Created project {project_info.name} with id {project_info.id}")
+
+    g.api.project.update_meta(project_info.id, project_meta)
+    sly.logger.info(f"Updated project {project_info.name} meta")
+    project_meta = sly.ProjectMeta.from_json(g.api.project.get_meta(project_info.id))
+
+    for dataset_name, dataset_images in images.items():
+        dataset_info = g.api.dataset.create(project_info.id, dataset_name)
+        sly.logger.info(
+            f"Created dataset {dataset_info.name} with id {dataset_info.id}"
+        )
+
+        for tag_name, images_paths in dataset_images.items():
+            image_names = [os.path.basename(image_path) for image_path in images_paths]
+
+            uploaded_image_ids = [
+                image_info.id
+                for image_info in g.api.image.upload_paths(
+                    dataset_info.id, image_names, images_paths
+                )
+            ]
+            sly.logger.info(f"Uploaded {len(uploaded_image_ids)} images")
+
+            tag_id = project_meta.get_tag_meta(tag_name).sly_id
+            sly.logger.debug(
+                f"Will try to add tag {tag_name} with id {tag_id} for image IDS {uploaded_image_ids}"
+            )
+
+            g.api.image.add_tag_batch(uploaded_image_ids, tag_id)
+            sly.logger.info(f"Added tag {tag_name} to {len(uploaded_image_ids)} images")
+
+    sly.logger.info(f"Finished processing classification project {project.name}.")
+
+    return project_info
+
+
+def process_object_detection_project(
+    project: roboflow.Project, extract_path: str, converted_path: str
+) -> Union[bool, sly.ProjectInfo]:
+    """Converts Roboflow project in object detection format to Supervisely format and uploads it to Supervisely.
+
+    :param project: project object from Roboflow API
+    :type project: roboflow.Project
+    :param extract_path: path to the directory with Roboflow project after unpacking
+    :type extract_path: str
+    :param converted_path: path to the directory where converted project will be saved
+    :type converted_path: str
+    :return: ProjectInfo object from Supervisely API if the upload was successful, False otherwise
+    :rtype: Union[bool, sly.ProjectInfo]
+    """
+    sly.logger.debug(f"Processing object detection project {project.name}.")
+    prepare_coco(extract_path)
 
     try:
         coco_to_supervisely(extract_path, converted_path)
@@ -286,14 +443,9 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
 
     project_info = g.api.project.get_info_by_id(sly_id)
 
-    try:
-        new_url = sly.utils.abs_url(project_info.url)
-    except Exception:
-        new_url = project_info.url
-    sly.logger.debug(f"New URL for images project: {new_url}")
-    update_cells(project.id, new_url=new_url)
+    sly.logger.debug(f"Project {project.name} was processed successfully.")
 
-    return True
+    return project_info
 
 
 def prepare_coco(directory: str) -> None:

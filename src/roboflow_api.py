@@ -44,7 +44,7 @@ def get_projects(workspace: roboflow.Workspace = None) -> List[roboflow.Project]
 def download_project(
     project: roboflow.Project,
     save_path: str,
-    export_format: str = "coco",
+    export_format: str,
 ) -> bool:
     """Downloads the project from Roboflow API to the given save path in the given export format.
 
@@ -52,8 +52,8 @@ def download_project(
     :type project: roboflow.Project
     :param save_path: path to save the downloaded project
     :type save_path: str
-    :param export_format: format to export the project, defaults to "coco"
-    :type export_format: str, optional
+    :param export_format: format to export the project
+    :type export_format: str
     :return: True if the project was successfully downloaded, False otherwise
     :rtype: bool
     """
