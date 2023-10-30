@@ -150,6 +150,7 @@ def start_copying() -> None:
         EXPORT_FORMATS = {
             "classification": "folder",
             "object-detection": "coco",
+            "instance-segmentation": "coco",
         }
 
         export_format = EXPORT_FORMATS.get(project.type)
@@ -283,7 +284,8 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
 
     PROCESSING_FUNCTIONS = {
         "classification": process_classification_project,
-        "object-detection": process_object_detection_project,
+        "object-detection": process_coco_project,
+        "instance-segmentation": process_coco_project,
     }
 
     processing_function = PROCESSING_FUNCTIONS.get(project.type)
@@ -295,7 +297,12 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
         return False
 
     converted_path = os.path.join(g.CONVERTED_DIR, project.name)
-    project_info = processing_function(project, extract_path, converted_path)
+    if project.type == "instance-segmentation":
+        project_info = processing_function(
+            project, extract_path, converted_path, ignore_bbox=True
+        )
+    else:
+        project_info = processing_function(project, extract_path, converted_path)
 
     if project_info is False:
         return False
@@ -405,8 +412,11 @@ def process_classification_project(
     return project_info
 
 
-def process_object_detection_project(
-    project: roboflow.Project, extract_path: str, converted_path: str
+def process_coco_project(
+    project: roboflow.Project,
+    extract_path: str,
+    converted_path: str,
+    ignore_bbox: bool = False,
 ) -> Union[bool, sly.ProjectInfo]:
     """Converts Roboflow project in object detection format to Supervisely format and uploads it to Supervisely.
 
@@ -416,6 +426,8 @@ def process_object_detection_project(
     :type extract_path: str
     :param converted_path: path to the directory where converted project will be saved
     :type converted_path: str
+    :param ignore_bbox: if True, will ignore bounding boxes in COCO format, defaults to False
+    :type ignore_bbox: bool, optional
     :return: ProjectInfo object from Supervisely API if the upload was successful, False otherwise
     :rtype: Union[bool, sly.ProjectInfo]
     """
@@ -423,7 +435,7 @@ def process_object_detection_project(
     prepare_coco(extract_path)
 
     try:
-        coco_to_supervisely(extract_path, converted_path)
+        coco_to_supervisely(extract_path, converted_path, ignore_bbox=ignore_bbox)
     except Exception as e:
         sly.logger.warning(f"Can't convert project {project.name}: {e}")
         return False

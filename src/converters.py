@@ -9,13 +9,15 @@ import numpy as np
 from copy import deepcopy
 
 
-def coco_to_supervisely(src_path: str, dst_path: str) -> str:
+def coco_to_supervisely(src_path: str, dst_path: str, ignore_bbox: bool = False) -> str:
     """Convert COCO project from src_path to Supervisely project in dst_path.
 
     :param src_path: path to COCO project.
     :type src_path: str
     :param dst_path: path to Supervisely project.
     :type dst_path: str
+    :param ingore_bbox: if True, bounding boxes will be ignored, defaults to False
+    :type ingore_bbox: bool, optional
     :return: path to Supervisely project.
     :rtype: str
     """
@@ -61,6 +63,7 @@ def coco_to_supervisely(src_path: str, dst_path: str) -> str:
                         coco_categories=categories,
                         coco_ann=img_ann,
                         image_size=img_size,
+                        ignore_bbox=ignore_bbox,
                     )
                     move_trainvalds_to_sly_dataset(
                         dataset_dir=dataset_path,
@@ -110,6 +113,7 @@ def coco_to_sly_ann(
     coco_categories: List[dict],
     coco_ann: List[Dict],
     image_size: Tuple[int, int],
+    ignore_bbox: bool = False,
 ) -> sly.Annotation:
     """Convert COCO annotation to Supervisely annotation.
 
@@ -121,6 +125,8 @@ def coco_to_sly_ann(
     :type coco_ann: List[Dict]
     :param image_size: size of image.
     :type image_size: Tuple[int, int]
+    :param ignore_bbox: if True, bounding boxes will be ignored, defaults to False
+    :type ignore_bbox: bool, optional
     :return: Supervisely annotation.
     :rtype: sly.Annotation
     """
@@ -146,18 +152,19 @@ def coco_to_sly_ann(
                 curr_labels.extend([sly.Label(figure, obj_class) for figure in figures])
         labels.extend(curr_labels)
 
-        bbox = object.get("bbox")
-        if bbox is not None and len(bbox) == 4:
-            obj_class_name = name_cat_id_map[object["category_id"]]
-            obj_class = meta.get_obj_class(obj_class_name)
-            if len(curr_labels) > 1:
-                for label in curr_labels:
-                    bbox = label.geometry.to_bbox()
-                    labels.append(sly.Label(bbox, obj_class))
-            else:
-                x, y, w, h = bbox
-                rectangle = sly.Label(sly.Rectangle(y, x, y + h, x + w), obj_class)
-                labels.append(rectangle)
+        if not ignore_bbox:
+            bbox = object.get("bbox")
+            if bbox is not None and len(bbox) == 4:
+                obj_class_name = name_cat_id_map[object["category_id"]]
+                obj_class = meta.get_obj_class(obj_class_name)
+                if len(curr_labels) > 1:
+                    for label in curr_labels:
+                        bbox = label.geometry.to_bbox()
+                        labels.append(sly.Label(bbox, obj_class))
+                else:
+                    x, y, w, h = bbox
+                    rectangle = sly.Label(sly.Rectangle(y, x, y + h, x + w), obj_class)
+                    labels.append(rectangle)
 
         caption = object.get("caption")
         if caption is not None:
