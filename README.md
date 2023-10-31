@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github-production-user-asset-6210df.s3.amazonaws.com/118521851/279346587-26e4d400-9fe7-45e9-a711-9663b1f88565.png"/>
+<img src="https://github-production-user-asset-6210df.s3.amazonaws.com/118521851/279370466-17c304ee-14d4-4a54-816b-3814fae5c9fa.png"/>
 
 # Convert and copy multiple Roboflow projects into Supervisely at once
 
