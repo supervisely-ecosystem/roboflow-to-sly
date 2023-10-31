@@ -513,7 +513,7 @@ def update_cells(project_id: int, **kwargs) -> None:
         - new_status: new status for the project
         - new_url: new Supervisely URL for the project
 
-    :param project_id: project ID in CVAT for projects table to update
+    :param project_id: project ID in Roboflow for projects table to update
     :type project_id: int
     """
     key_cell_value = project_id
