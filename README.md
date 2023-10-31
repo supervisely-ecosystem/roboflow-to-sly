@@ -59,11 +59,11 @@ If everything was done correctly, you will see the following message in the app 
 
 - ✅ Successfully connected to `https://api.roboflow.com`.<br>
 
-NOTE: The app will not save your API key, you will need to enter them every time you launch the app. To save your time you can use the team files to store your credentials.
+NOTE: The app will not save your API key, you will need to enter it every time you launch the app. To save your time you can use the team files to store your credentials.
 
 ## How To Run
 
-NOTE: In this section, we consider that you have already connected to Roboflow instance and have the necessary permissions to work with them. If you haven't done it yet, please refer to the [Preparation](#Preparation) section.<br>
+NOTE: In this section, we consider that you have already connected to Roboflow instance and have the necessary permissions to work with it. If you haven't done it yet, please refer to the [Preparation](#Preparation) section.<br>
 So, here is the step-by-step guide on how to use the app:
 
 **Step 1:** Select projects to copy<br>
