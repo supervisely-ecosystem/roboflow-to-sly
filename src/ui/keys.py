@@ -19,7 +19,7 @@ roboflow_api_address_field = Field(
 )
 
 roboflow_api_key_input = Input(
-    minlength=1, type="password", placeholder="for example: admin"
+    minlength=1, type="password", placeholder="for example: sgasYTFGh321h"
 )
 roboflow_api_key_field = Field(
     title="Roboflow API key",
@@ -195,3 +195,6 @@ if g.STATE.loaded_from_env:
         )
 
         disconnected(with_error=True)
+else:
+    sly.logger.debug('The application was started without the "Load from .env" option.')
+    roboflow_api_address_input.set_value(g.DEFAULT_API_ADDRESS)

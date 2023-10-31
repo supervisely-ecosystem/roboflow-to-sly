@@ -120,6 +120,6 @@ sly.logger.debug(f"Path to the TeamFiles from environment: {ROBOFLOW_ENV_TEAMFIL
 CopyingStatus = namedtuple("CopyingStatus", ["copied", "error", "waiting", "working"])
 COPYING_STATUS = CopyingStatus("✅ Copied", "❌ Error", "⏳ Waiting", "🔄 Working")
 
-if ROBOFLOW_ENV_FILE:
+if ROBOFLOW_ENV_TEAMFILES:
     sly.logger.debug(".env file is provided, will try to download it.")
     STATE.load_from_env()
