@@ -8,7 +8,7 @@
   "icon": "",
   "icon_cover": true,
   "headless": false,
-  "poster": "",
+  "poster": "https://github-production-user-asset-6210df.s3.amazonaws.com/118521851/279346587-26e4d400-9fe7-45e9-a711-9663b1f88565.png",
   "entrypoint": "python -m uvicorn migration_tool.src.main:app --host 0.0.0.0 --port 8000",
   "port": 8000,
   "context_menu": {
