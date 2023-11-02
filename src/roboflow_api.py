@@ -83,13 +83,13 @@ def download_project(
 
     response = requests.request("GET", request)
     if response.status_code != 200:
-        sly.logger.error(f"Failed to download project: {response.text}")
+        sly.logger.warning(f"Failed to download project: {response.text}")
         return False
 
     export = response.json().get("export")
 
     if not export:
-        sly.logger.error("Failed to download project: export data is empty.")
+        sly.logger.warning("Failed to download project: export data is empty.")
         return False
 
     sly.logger.debug(f"Successfully retrieved export data: {export}.")
@@ -98,7 +98,7 @@ def download_project(
     download_size = export.get("size")
 
     if not download_link:
-        sly.logger.error("Failed to download project: download link is empty.")
+        sly.logger.warning("Failed to download project: download link is empty.")
         return False
 
     sly.logger.info(f"Downloading {download_size} MB from {download_link}.")

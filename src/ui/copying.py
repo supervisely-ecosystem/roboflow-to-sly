@@ -155,7 +155,7 @@ def start_copying() -> None:
 
         export_format = EXPORT_FORMATS.get(project.type)
         if not export_format:
-            sly.logger.error(
+            sly.logger.warning(
                 f"Unknown project type {project.type}. "
                 f"Following project types are supported: {list(EXPORT_FORMATS.keys())}."
             )
@@ -179,7 +179,7 @@ def start_copying() -> None:
                 save_project_to_zip(project, archive_path, retry)
             else:
                 # If the archive is empty after 10 retries, return False.
-                sly.logger.error(
+                sly.logger.warning(
                     f"Can't download project {project.name} after 10 retries."
                 )
                 return False
@@ -290,7 +290,7 @@ def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
 
     processing_function = PROCESSING_FUNCTIONS.get(project.type)
     if not processing_function:
-        sly.logger.error(
+        sly.logger.warning(
             f"Unknown project type {project.type}. "
             f"Following project types are supported: {list(PROCESSING_FUNCTIONS.keys())}."
         )
