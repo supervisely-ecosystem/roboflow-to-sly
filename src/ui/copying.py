@@ -176,7 +176,7 @@ def start_copying() -> None:
                     timer -= 1
 
                 sly.logger.info(f"Retry {retry} to download project {project.name}...")
-                save_project_to_zip(project, archive_path, retry)
+                return save_project_to_zip(project, archive_path, retry)
             else:
                 # If the archive is empty after 10 retries, return False.
                 sly.logger.warning(
