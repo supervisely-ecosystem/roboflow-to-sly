@@ -25,7 +25,7 @@ if sly.is_development():
     else:
         sly.logger.warning("One of the .env files is missing. It may cause errors.")
 
-api: sly.Api = sly.Api.from_env()
+api = sly.Api.from_env()
 
 TEMP_DIR = os.path.join(PARENT_DIR, "temp")
 
@@ -51,8 +51,8 @@ DEFAULT_APP_ADDRESS = "https://app.roboflow.com"
 
 class State:
     def __init__(self):
-        self.selected_team = sly.io.env.team_id()
-        self.selected_workspace = sly.io.env.workspace_id()
+        self.selected_team = sly.env.team_id()
+        self.selected_workspace = sly.env.workspace_id()
 
         # Will be set to True, if the app will be launched from .env file in Supervisely.
         self.loaded_from_env = False
