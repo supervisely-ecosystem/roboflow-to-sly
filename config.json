@@ -5,7 +5,7 @@
   "description": "Convert and copy multiple Roboflow projects into Supervisely at once.",
   "docker_image": "supervisely/base-py-sdk:6.72.168",
   "categories": ["images", "import", "migration"],
-  "icon": "https://github-production-user-asset-6210df.s3.amazonaws.com/118521851/281423886-a5900a6b-42da-4be2-81ca-feb753755061.png",
+  "icon": "https://github.com/supervisely-ecosystem/roboflow-to-sly/assets/119248312/46e2cd6f-d9af-4b5a-adf5-9e08f0bd190c",
   "icon_cover": true,
   "headless": false,
   "poster": "https://github-production-user-asset-6210df.s3.amazonaws.com/118521851/281423849-37c6a230-f6d4-4c62-88bd-fd6b6a9cfbf1.png",
