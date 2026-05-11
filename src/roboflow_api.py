@@ -1,7 +1,6 @@
-from typing import List
+from typing import List, Optional
 import supervisely as sly
 import roboflow
-import requests
 
 import src.globals as g
 
@@ -43,72 +42,40 @@ def get_projects(workspace: roboflow.Workspace = None) -> List[roboflow.Project]
 
 def download_project(
     project: roboflow.Project,
-    save_path: str,
+    save_dir: str,
     export_format: str,
-) -> bool:
-    """Downloads the project from Roboflow API to the given save path in the given export format.
+) -> Optional[str]:
+    """Downloads and extracts a Roboflow project using the SDK.
 
     :param project: Roboflow Project object
     :type project: roboflow.Project
-    :param save_path: path to save the downloaded project
-    :type save_path: str
-    :param export_format: format to export the project
+    :param save_dir: directory where the project will be downloaded
+    :type save_dir: str
+    :param export_format: format to export the project (e.g. "coco", "folder")
     :type export_format: str
-    :return: True if the project was successfully downloaded, False otherwise
-    :rtype: bool
+    :return: path to the extracted project directory, or None on failure
+    :rtype: Optional[str]
     """
-    sly.logger.info(
-        f"Downloading project {project.name} from Roboflow API. "
-        f"Export format: {export_format}, save path: {save_path}."
-    )
-
     versions = project.versions()
     if not versions:
         sly.logger.warning(
             f"Project {project.name} has no versions. "
             "In order to download the project, it must have at least one version."
         )
-        return False
+        return None
 
     version = versions[-1]
     sly.logger.debug(f"Using latest version {version.version}.")
-
-    version.download(export_format)
-    # request = (
-    #     f"{g.STATE.roboflow_api_address}/{version.version}/"
-    #     f"{export_format}?api_key={g.STATE.roboflow_api_key}"
-    # )
     sly.logger.info(
-        # f"Making request (API key hidden in logs) to {request.split('?')[0]}"
-        f"Downloading project in {export_format} format"
+        f"Downloading project {project.name} in {export_format} format to {save_dir}."
     )
 
-    # response = requests.request("GET", request)
-    # if response.status_code != 200:
-    #     sly.logger.warning(f"Failed to download project: {response.text}")
-    #     return False
-
-    # export = response.json().get("export")
-
-    # if not export:
-    #     sly.logger.warning("Failed to download project: export data is empty.")
-    #     return False
-
-    # sly.logger.debug(f"Successfully retrieved export data: {export}.")
-
-    # download_link = export.get("link")
-    # download_size = export.get("size")
-
-    # if not download_link:
-    #     sly.logger.warning("Failed to download project: download link is empty.")
-    #     return False
-
-    # sly.logger.info(f"Downloading {download_size} MB from {download_link}.")
-
-    # download_response = requests.request("GET", download_link)
-    # with open(save_path, "wb") as f:
-    #     f.write(download_response.content)
-
-    sly.logger.info(f"Successfully downloaded data to {save_path}.")
-
-    return True
+    try:
+        dataset = version.download(export_format, location=save_dir)
+        sly.logger.info(
+            f"Successfully downloaded project {project.name} to {dataset.location}."
+        )
+        return dataset.location
+    except Exception as e:
+        sly.logger.error(f"Failed to download project {project.name}: {e}")
+        return None

@@ -19,7 +19,6 @@ import src.globals as g
 from src.roboflow_api import download_project
 from src.converters import coco_to_supervisely
 
-
 COLUMNS = [
     "COPYING STATUS",
     "ID",
@@ -126,24 +125,21 @@ def start_copying() -> None:
     copy_button.text = "Copying..."
     g.STATE.continue_copying = True
 
-    def save_project_to_zip(
-        project: roboflow.Project, archive_path: str, retry: int = 0
-    ) -> bool:
-        """Tries to download the project from Roboflow API and save it to the zip archive.
-        Functions tries to download the task data 10 times if the archive is empty and
-        returns False if it can't download the data after 10 retries. Otherwise returns True.
+    def download_project_dir(
+        project: roboflow.Project, retry: int = 0
+    ) -> Union[str, None]:
+        """Downloads and extracts the project from Roboflow API.
+        Retries up to 10 times on failure.
 
         :param project: project object from Roboflow API
-        :type task_id: roboflow.Project
-        :param archive_path: path to the zip archive on the local machine
-        :type archive_path: str
+        :type project: roboflow.Project
         :param retry: current number of retries, defaults to 0
         :type retry: int, optional
-        :return: download status (True if the archive is not empty, False otherwise)
-        :rtype: bool
+        :return: path to the extracted project directory, or None on failure
+        :rtype: Union[str, None]
         """
         sly.logger.debug(
-            f"Trying to retreive project {project.name} archive from Roboflow API..."
+            f"Trying to download project {project.name} from Roboflow API. "
             f"Project type: {project.type}."
         )
 
@@ -159,15 +155,15 @@ def start_copying() -> None:
                 f"Unknown project type {project.type}. "
                 f"Following project types are supported: {list(EXPORT_FORMATS.keys())}."
             )
-            return False
-        download_status = download_project(project, archive_path, export_format)
+            return None
 
-        if not download_status:
+        extract_path = download_project(project, g.UNPACKED_DIR, export_format)
+
+        if not extract_path:
             sly.logger.info(
                 f"Will retry to download project {project.name}, because download was unsuccessful."
             )
             if retry < 10:
-                # Try to download the task data again.
                 retry += 1
                 timer = 5
                 while timer > 0:
@@ -176,18 +172,15 @@ def start_copying() -> None:
                     timer -= 1
 
                 sly.logger.info(f"Retry {retry} to download project {project.name}...")
-                return save_project_to_zip(project, archive_path, retry)
+                return download_project_dir(project, retry)
             else:
-                # If the archive is empty after 10 retries, return False.
                 sly.logger.warning(
                     f"Can't download project {project.name} after 10 retries."
                 )
-                return False
+                return None
         else:
-            sly.logger.debug(
-                f"Archive for project {project.name} was downloaded successfully."
-            )
-            return True
+            sly.logger.debug(f"Project {project.name} downloaded to {extract_path}.")
+            return extract_path
 
     succesfully_uploaded = 0
     uploaded_with_errors = 0
@@ -202,10 +195,9 @@ def start_copying() -> None:
             sly.logger.debug(f"Copying project {project.name}")
             update_cells(project.id, new_status=g.COPYING_STATUS.working)
 
-            archive_path = os.path.join(g.ARCHIVE_DIR, f"{project.name}.zip")
-            download_status = save_project_to_zip(project, archive_path)
+            extract_path = download_project_dir(project)
 
-            if not download_status:
+            if not extract_path:
                 sly.logger.warning(f"Project {project.name} was not downloaded.")
                 update_cells(project.id, new_status=g.COPYING_STATUS.error)
                 uploaded_with_errors += 1
@@ -213,7 +205,7 @@ def start_copying() -> None:
 
             sly.logger.info(f"Project {project.name} was downloaded successfully.")
 
-            upload_status = convert_and_upload(project, archive_path)
+            upload_status = convert_and_upload(project, extract_path)
 
             if upload_status:
                 sly.logger.info(f"Project {project.name} was uploaded successfully.")
@@ -264,23 +256,19 @@ def start_copying() -> None:
     app.stop()
 
 
-def convert_and_upload(project: roboflow.Project, archive_path: str) -> bool:
-    """Unpacks the project archive, converts it to Supervisely format and uploads it to Supervisely.
+def convert_and_upload(project: roboflow.Project, extract_path: str) -> bool:
+    """Converts and uploads an already-extracted project to Supervisely.
 
     :param project: project object from Roboflow API
     :type project: roboflow.Project
-    :param archive_path: path to the project archive on the local machine
-    :type archive_path: str
+    :param extract_path: path to the extracted project directory
+    :type extract_path: str
     :return: status of the upload (True if the upload was successful, False otherwise)
     :rtype: bool
     """
     sly.logger.debug(
         f"Converting and uploading project {project.name} with type {project.type}"
     )
-    extract_path = os.path.join(g.UNPACKED_DIR, project.name)
-
-    sly.fs.unpack_archive(archive_path, extract_path, remove_junk=True)
-    sly.logger.debug(f"Unpacked {archive_path} to {extract_path}")
 
     PROCESSING_FUNCTIONS = {
         "classification": process_classification_project,
@@ -443,7 +431,7 @@ def process_coco_project(
     sly.logger.debug(f"Converted {extract_path} to {converted_path}")
 
     try:
-        (sly_id, sly_name) = sly.Project.upload(
+        sly_id, sly_name = sly.Project.upload(
             converted_path,
             g.api,
             g.STATE.selected_workspace,
