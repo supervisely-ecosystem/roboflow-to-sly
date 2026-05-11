@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Union
 
 import roboflow
+from pycocotools.coco import COCO
 from supervisely.app.widgets import (
     Container,
     Card,
@@ -17,7 +18,7 @@ from supervisely.app.widgets import (
 )
 import src.globals as g
 from src.roboflow_api import download_project
-from src.converters import coco_to_supervisely
+from src.converters import coco_to_sly_ann
 
 COLUMNS = [
     "COPYING STATUS",
@@ -406,13 +407,13 @@ def process_coco_project(
     converted_path: str,
     ignore_bbox: bool = False,
 ) -> Union[bool, sly.ProjectInfo]:
-    """Converts Roboflow project in object detection format to Supervisely format and uploads it to Supervisely.
+    """Converts Roboflow COCO project to Supervisely format and uploads it via API.
 
     :param project: project object from Roboflow API
     :type project: roboflow.Project
     :param extract_path: path to the directory with Roboflow project after unpacking
     :type extract_path: str
-    :param converted_path: path to the directory where converted project will be saved
+    :param converted_path: unused, kept for signature compatibility
     :type converted_path: str
     :param ignore_bbox: if True, will ignore bounding boxes in COCO format, defaults to False
     :type ignore_bbox: bool, optional
@@ -422,29 +423,94 @@ def process_coco_project(
     sly.logger.debug(f"Processing object detection project {project.name}.")
     prepare_coco(extract_path)
 
-    try:
-        coco_to_supervisely(extract_path, converted_path, ignore_bbox=ignore_bbox)
-    except Exception as e:
-        sly.logger.warning(f"Can't convert project {project.name}: {e}")
+    dataset_names = sly.fs.get_subdirs(extract_path)
+    if not dataset_names:
+        sly.logger.warning(f"No dataset splits found in {extract_path}.")
         return False
 
-    sly.logger.debug(f"Converted {extract_path} to {converted_path}")
+    # Load COCO data for each split and collect all categories
+    coco_per_dataset = {}
+    categories_map = {}  # id -> name, accumulated across all splits
+    for ds_name in dataset_names:
+        ann_path = os.path.join(extract_path, ds_name, "annotations", "instances.json")
+        if not os.path.exists(ann_path):
+            sly.logger.warning(f"No annotations found for split {ds_name}, skipping.")
+            continue
+        try:
+            coco = COCO(ann_path)
+        except Exception as e:
+            sly.logger.warning(f"Failed to load COCO annotations for {ds_name}: {e}")
+            continue
+        coco_per_dataset[ds_name] = coco
+        for cat in coco.loadCats(coco.getCatIds()):
+            categories_map[cat["id"]] = cat["name"]
 
-    try:
-        sly_id, sly_name = sly.Project.upload(
-            converted_path,
-            g.api,
-            g.STATE.selected_workspace,
-            project.name,
+    if not coco_per_dataset:
+        sly.logger.warning(f"No valid COCO splits found in {extract_path}.")
+        return False
+
+    # Build ProjectMeta from all categories
+    project_meta = sly.ProjectMeta()
+    colors = []
+    for cat_name in dict.fromkeys(
+        categories_map.values()
+    ):  # preserve order, deduplicate
+        color = sly.color.generate_rgb(colors)
+        colors.append(color)
+        project_meta = project_meta.add_obj_class(
+            sly.ObjClass(cat_name, sly.AnyGeometry, color)
         )
-    except Exception as e:
-        sly.logger.warning(f"Can't upload project {project.name} to Supervisely: {e}")
-        return False
 
-    project_info = g.api.project.get_info_by_id(sly_id)
+    # Create Supervisely project
+    project_info = g.api.project.create(
+        g.STATE.selected_workspace, project.name, change_name_if_conflict=True
+    )
+    sly.logger.info(f"Created project {project_info.name} with id {project_info.id}")
+    g.api.project.update_meta(project_info.id, project_meta)
+    project_meta = sly.ProjectMeta.from_json(g.api.project.get_meta(project_info.id))
+
+    for ds_name, coco in coco_per_dataset.items():
+        img_dir = os.path.join(extract_path, ds_name, "images")
+        categories = coco.loadCats(coco.getCatIds())
+
+        image_paths, image_names, valid_img_infos = [], [], []
+        for img_info in coco.dataset.get("images", []):
+            file_name = img_info["file_name"]
+            if "/" in file_name:
+                file_name = os.path.basename(file_name)
+            img_path = os.path.join(img_dir, file_name)
+            if sly.fs.file_exists(img_path):
+                image_paths.append(img_path)
+                image_names.append(file_name)
+                valid_img_infos.append(img_info)
+
+        if not image_paths:
+            sly.logger.warning(f"No images found for split {ds_name}, skipping.")
+            continue
+
+        dataset_info = g.api.dataset.create(project_info.id, ds_name)
+        sly.logger.info(
+            f"Created dataset {dataset_info.name} with id {dataset_info.id}"
+        )
+
+        uploaded = list(
+            g.api.image.upload_paths(dataset_info.id, image_names, image_paths)
+        )
+        sly.logger.info(f"Uploaded {len(uploaded)} images to dataset {ds_name}")
+
+        anns = []
+        for img_info in valid_img_infos:
+            img_anns = coco.imgToAnns.get(img_info["id"], [])
+            img_size = (img_info["height"], img_info["width"])
+            ann = coco_to_sly_ann(
+                project_meta, categories, img_anns, img_size, ignore_bbox
+            )
+            anns.append(ann)
+
+        g.api.annotation.upload_anns([img.id for img in uploaded], anns)
+        sly.logger.info(f"Uploaded {len(anns)} annotations to dataset {ds_name}")
 
     sly.logger.debug(f"Project {project.name} was processed successfully.")
-
     return project_info
 
 
