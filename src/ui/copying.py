@@ -285,13 +285,10 @@ def convert_and_upload(project: roboflow.Project, extract_path: str) -> bool:
         )
         return False
 
-    converted_path = os.path.join(g.CONVERTED_DIR, project.name)
     if project.type == "instance-segmentation":
-        project_info = processing_function(
-            project, extract_path, converted_path, ignore_bbox=True
-        )
+        project_info = processing_function(project, extract_path, ignore_bbox=True)
     else:
-        project_info = processing_function(project, extract_path, converted_path)
+        project_info = processing_function(project, extract_path)
 
     if project_info is False:
         return False
@@ -307,7 +304,7 @@ def convert_and_upload(project: roboflow.Project, extract_path: str) -> bool:
 
 
 def process_classification_project(
-    project: roboflow.Project, extract_path: str, converted_path: str
+    project: roboflow.Project, extract_path: str
 ) -> Union[bool, sly.ProjectInfo]:
     """Converts Roboflow project in classification format to Supervisely format and uploads it to Supervisely.
 
@@ -315,8 +312,6 @@ def process_classification_project(
     :type project: roboflow.Project
     :param extract_path: path to the directory with Roboflow project after unpacking
     :type extract_path: str
-    :param converted_path: path to the directory where converted project will be saved
-    :type converted_path: str
     :return: ProjectInfo object from Supervisely API if the upload was successful, False otherwise
     :rtype: Union[bool, sly.ProjectInfo]
     """
@@ -404,7 +399,6 @@ def process_classification_project(
 def process_coco_project(
     project: roboflow.Project,
     extract_path: str,
-    converted_path: str,
     ignore_bbox: bool = False,
 ) -> Union[bool, sly.ProjectInfo]:
     """Converts Roboflow COCO project to Supervisely format and uploads it via API.
@@ -413,20 +407,15 @@ def process_coco_project(
     :type project: roboflow.Project
     :param extract_path: path to the directory with Roboflow project after unpacking
     :type extract_path: str
-    :param converted_path: unused, kept for signature compatibility
-    :type converted_path: str
     :param ignore_bbox: if True, will ignore bounding boxes in COCO format, defaults to False
     :type ignore_bbox: bool, optional
     :return: ProjectInfo object from Supervisely API if the upload was successful, False otherwise
     :rtype: Union[bool, sly.ProjectInfo]
     """
     sly.logger.debug(f"Processing object detection project {project.name}.")
-    sly.logger.debug(f"Contents of {extract_path} BEFORE prepare_coco: {os.listdir(extract_path)}")
     prepare_coco(extract_path)
-    sly.logger.debug(f"Contents of {extract_path} AFTER prepare_coco: {os.listdir(extract_path)}")
 
     dataset_names = sly.fs.get_subdirs(extract_path)
-    sly.logger.debug(f"sly.fs.get_subdirs({extract_path}) = {dataset_names}")
     if not dataset_names:
         sly.logger.warning(f"No dataset splits found in {extract_path}.")
         return False

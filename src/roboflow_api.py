@@ -75,7 +75,7 @@ def download_project(
         f"Downloading project {project.name} in {export_format} format to {save_dir}."
     )
 
-    # Set DATASET_DIRECTORY so the SDK downloads into save_dir regardless of its version.
+    # Set DATASET_DIRECTORY so the roboflow SDK downloads into save_dir regardless of its version.
     # Passing location= directly is unreliable in roboflow>=1.3 (files may not appear there).
     prev_dataset_dir = os.environ.get("DATASET_DIRECTORY")
     os.environ["DATASET_DIRECTORY"] = save_dir
