@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 import supervisely as sly
 import roboflow
@@ -64,8 +65,12 @@ def download_project(
         )
         return None
 
-    version = versions[-1]
-    sly.logger.debug(f"Using latest version {version.version}.")
+    # versions()[-1].version is the full ID like "workspace/project/1";
+    latest = versions[-1]
+    version_number = int(os.path.basename(str(latest.version)))
+    version = project.version(version_number)
+
+    sly.logger.debug(f"Using latest version {version_number}.")
     sly.logger.info(
         f"Downloading project {project.name} in {export_format} format to {save_dir}."
     )
