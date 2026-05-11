@@ -73,39 +73,41 @@ def download_project(
     version = versions[-1]
     sly.logger.debug(f"Using latest version {version.version}.")
 
-    request = (
-        f"{g.STATE.roboflow_api_address}/{version.version}/"
-        f"{export_format}?api_key={g.STATE.roboflow_api_key}"
-    )
+    version.download(export_format)
+    # request = (
+    #     f"{g.STATE.roboflow_api_address}/{version.version}/"
+    #     f"{export_format}?api_key={g.STATE.roboflow_api_key}"
+    # )
     sly.logger.info(
-        f"Making request (API key hidden in logs) to {request.split('?')[0]}"
+        # f"Making request (API key hidden in logs) to {request.split('?')[0]}"
+        f"Downloading project in {export_format} format"
     )
 
-    response = requests.request("GET", request)
-    if response.status_code != 200:
-        sly.logger.warning(f"Failed to download project: {response.text}")
-        return False
+    # response = requests.request("GET", request)
+    # if response.status_code != 200:
+    #     sly.logger.warning(f"Failed to download project: {response.text}")
+    #     return False
 
-    export = response.json().get("export")
+    # export = response.json().get("export")
 
-    if not export:
-        sly.logger.warning("Failed to download project: export data is empty.")
-        return False
+    # if not export:
+    #     sly.logger.warning("Failed to download project: export data is empty.")
+    #     return False
 
     sly.logger.debug(f"Successfully retrieved export data: {export}.")
 
-    download_link = export.get("link")
-    download_size = export.get("size")
+    # download_link = export.get("link")
+    # download_size = export.get("size")
 
-    if not download_link:
-        sly.logger.warning("Failed to download project: download link is empty.")
-        return False
+    # if not download_link:
+    #     sly.logger.warning("Failed to download project: download link is empty.")
+    #     return False
 
-    sly.logger.info(f"Downloading {download_size} MB from {download_link}.")
+    # sly.logger.info(f"Downloading {download_size} MB from {download_link}.")
 
-    download_response = requests.request("GET", download_link)
-    with open(save_path, "wb") as f:
-        f.write(download_response.content)
+    # download_response = requests.request("GET", download_link)
+    # with open(save_path, "wb") as f:
+    #     f.write(download_response.content)
 
     sly.logger.info(f"Successfully downloaded data to {save_path}.")
 
