@@ -94,7 +94,7 @@ def download_project(
     #     sly.logger.warning("Failed to download project: export data is empty.")
     #     return False
 
-    sly.logger.debug(f"Successfully retrieved export data: {export}.")
+    # sly.logger.debug(f"Successfully retrieved export data: {export}.")
 
     # download_link = export.get("link")
     # download_size = export.get("size")
