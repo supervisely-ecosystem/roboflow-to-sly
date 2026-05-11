@@ -75,9 +75,13 @@ def download_project(
         f"Downloading project {project.name} in {export_format} format to {save_dir}."
     )
 
+    # Set DATASET_DIRECTORY so the SDK downloads into save_dir regardless of its version.
+    # Passing location= directly is unreliable in roboflow>=1.3 (files may not appear there).
+    prev_dataset_dir = os.environ.get("DATASET_DIRECTORY")
+    os.environ["DATASET_DIRECTORY"] = save_dir
     try:
-        dataset = version.download(export_format, location=save_dir)
-        extract_path = _find_data_root(dataset.location, export_format)
+        dataset = version.download(export_format)
+        extract_path = os.path.abspath(dataset.location)
         sly.logger.info(
             f"Successfully downloaded project {project.name} to {extract_path}."
         )
@@ -85,37 +89,8 @@ def download_project(
     except Exception as e:
         sly.logger.error(f"Failed to download project {project.name}: {e}")
         return None
-
-
-def _find_data_root(base_dir: str, export_format: str) -> str:
-    """Locate the actual data directory inside base_dir.
-
-    Roboflow SDK sometimes extracts the zip into a named subdirectory inside
-    the requested location (e.g. location/pipe_root-1/).  Walk up to two
-    levels deep to find the real data root:
-    - For COCO: a directory whose immediate children include 'train', 'valid',
-      or 'test' subdirectories that contain '_annotations.coco.json'.
-    - For folder (classification): a directory whose immediate children include
-      'train', 'valid', or 'test' subdirectories with image files.
-
-    Returns base_dir unchanged when the data is already at the top level.
-    """
-    def _has_split_dirs(directory: str) -> bool:
-        subdirs = {name for name in os.listdir(directory) if os.path.isdir(os.path.join(directory, name))}
-        return bool(subdirs & {"train", "valid", "test"})
-
-    if _has_split_dirs(base_dir):
-        return base_dir
-
-    # Check one level deeper (SDK nested the contents)
-    for name in os.listdir(base_dir):
-        candidate = os.path.join(base_dir, name)
-        if os.path.isdir(candidate) and _has_split_dirs(candidate):
-            sly.logger.debug(f"Found actual data root at {candidate} (nested inside {base_dir}).")
-            return candidate
-
-    sly.logger.warning(
-        f"Could not locate data root in {base_dir}. Listing: {os.listdir(base_dir)}. "
-        "Returning base_dir as fallback."
-    )
-    return base_dir
+    finally:
+        if prev_dataset_dir is None:
+            os.environ.pop("DATASET_DIRECTORY", None)
+        else:
+            os.environ["DATASET_DIRECTORY"] = prev_dataset_dir
