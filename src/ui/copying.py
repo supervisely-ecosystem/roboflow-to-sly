@@ -421,9 +421,12 @@ def process_coco_project(
     :rtype: Union[bool, sly.ProjectInfo]
     """
     sly.logger.debug(f"Processing object detection project {project.name}.")
+    sly.logger.debug(f"Contents of {extract_path} BEFORE prepare_coco: {os.listdir(extract_path)}")
     prepare_coco(extract_path)
+    sly.logger.debug(f"Contents of {extract_path} AFTER prepare_coco: {os.listdir(extract_path)}")
 
     dataset_names = sly.fs.get_subdirs(extract_path)
+    sly.logger.debug(f"sly.fs.get_subdirs({extract_path}) = {dataset_names}")
     if not dataset_names:
         sly.logger.warning(f"No dataset splits found in {extract_path}.")
         return False
